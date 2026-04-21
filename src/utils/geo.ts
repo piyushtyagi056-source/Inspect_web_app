@@ -2,7 +2,7 @@ export const getHighlyAccurateLocation = async (): Promise<{lat: number, lng: nu
   try {
     // Attempt Google Geolocation API first for maximum Desktop Wi-Fi accuracy
     // This requires the Geolocation API to be enabled on the API key.
-    const apiKey = "AIzaSyCd0Vw2Ui-6Y5rAlvzOD2mUNJup6BgyVFc";
+    const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY;
     const response = await fetch(`https://www.googleapis.com/geolocation/v1/geolocate?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
