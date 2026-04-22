@@ -101,7 +101,6 @@ inspect/
    npm start
    ```
 
-## API Documentation
 
 Detailed API documentation can be found in the `server/README.md` file in the server directory.
 
@@ -116,3 +115,51 @@ Detailed API documentation can be found in the `server/README.md` file in the se
 ## License
 
 This project is licensed under the MIT License.
+### Testing the Application
+
+1. **Frontend**: Open http://localhost:5173 in your browser
+2. **Backend API**: The API is running at http://localhost:3000
+3. **Test User**: Use username "testuser" and any password to login (or register a new user)
+
+### Features to Test
+
+- **Registration/Login**: Create a new account or login with existing credentials
+- **Create Inspections**: Add new inspections with photos and location data
+- **View Inspections**: See all your saved inspections
+- **Offline Support**: The app works offline and syncs when the backend is available
+
+### API Testing
+
+You can test the API endpoints directly:
+
+**Register a new user:**
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username":"newuser","password":"password123"}'
+```
+
+**Login:**
+```bash
+curl -X POST http://localhost:3000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"newuser","password":"password123"}'
+```
+
+**Get inspections (requires auth token):**
+```bash
+curl -X GET http://localhost:3000/api/inspections \
+  -H "Authorization: Bearer YOUR_TOKEN_HERE"
+```
+## API Documentation
+> Detailed API documentation can be found in the `server/README.md` file in the server directory.
+  
+  ## Contributing
+  
+  1. Fork the repository
+  2. Create a feature branch
+  3. Make your changes
+  4. Test thoroughly
+  5. Submit a pull request
+  
+  ## License
