@@ -85,7 +85,7 @@ inspect/
    ```bash
    npm run dev
    ```
-   The frontend will run on http://localhost:5173
+   The frontend will run on http://localhost:5174
 
 ### Building for Production
 
@@ -117,7 +117,7 @@ Detailed API documentation can be found in the `server/README.md` file in the se
 This project is licensed under the MIT License.
 ### Testing the Application
 
-1. **Frontend**: Open http://localhost:5173 in your browser
+1. **Frontend**: Open http://localhost:5174 in your browser
 2. **Backend API**: The API is running at http://localhost:3000
 3. **Test User**: Use username "testuser" and any password to login (or register a new user)
 
