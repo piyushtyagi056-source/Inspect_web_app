@@ -1,4 +1,4 @@
-﻿# Inspect Web App
+# Inspect Web App
 
 A comprehensive inspection management web application built with React, TypeScript, and Node.js.
 
@@ -30,20 +30,20 @@ A comprehensive inspection management web application built with React, TypeScri
 
 ```
 inspect/
-├── src/                    # Frontend source code
-│   ├── components/         # React components
-│   ├── context/           # React context providers
-│   ├── pages/             # Page components
-│   ├── services/          # API and database services
-│   └── utils/             # Utility functions
-├── server/                # Backend API
-│   ├── src/
-│   │   ├── routes/        # API route handlers
-│   │   ├── db.ts          # Database configuration
-│   │   └── index.ts       # Server entry point
-│   └── README.md          # Backend documentation
-├── public/                # Static assets
-└── package.json           # Frontend dependencies
++-- src/                    # Frontend source code
+�   +-- components/         # React components
+�   +-- context/           # React context providers
+�   +-- pages/             # Page components
+�   +-- services/          # API and database services
+�   +-- utils/             # Utility functions
++-- server/                # Backend API
+�   +-- src/
+�   �   +-- routes/        # API route handlers
+�   �   +-- db.ts          # Database configuration
+�   �   +-- index.ts       # Server entry point
+�   +-- README.md          # Backend documentation
++-- public/                # Static assets
++-- package.json           # Frontend dependencies
 ```
 
 ## Getting Started
@@ -103,7 +103,7 @@ inspect/
 
 ## API Documentation
 
-See [server/README.md](server/README.md) for detailed API documentation.
+Detailed API documentation can be found in the [server/README.md](server/README.md) file.
 
 ## Contributing
 
