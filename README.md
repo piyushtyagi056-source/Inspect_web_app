@@ -59,7 +59,7 @@ inspect/
 ## Getting Started
 
 ### Prerequisites
-- Node.js (v18 or higher)
+- Node.js (v18 or higher) - Tested with v24.14.1
 - npm or yarn
 
 ### Installation
@@ -87,7 +87,7 @@ inspect/
 1. Start the backend server:
    ```bash
    cd server
-   npm run dev
+   npm run build && npm start
    ```
    The backend will run on http://localhost:3000
 
@@ -95,7 +95,7 @@ inspect/
    ```bash
    npm run dev
    ```
-   The frontend will run on http://localhost:5174
+   The frontend will run on http://localhost:5175 (or next available port)
 
 ### Building for Production
 
