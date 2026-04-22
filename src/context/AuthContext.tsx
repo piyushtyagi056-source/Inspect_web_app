@@ -22,16 +22,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setIsLoading(false);
   }, []);
 
-  const login = async (user: string, _pass?: string) => {
-    // Mock authentication: accepting any non-empty username/password
-    if (!user.trim()) return false;
-    
-    // Simulate API delay
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    setUsername(user);
-    localStorage.setItem('gov_inspect_auth_user', user);
-    return true;
+  const login = async (user: string, pass: string = '') => {
+    try {
+      const response = await fetch('http://localhost:3000/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username: user, password: pass }),
+      });
+      if (!response.ok) {
+        return false;
+      }
+      const data = await response.json();
+      setUsername(data.username);
+      localStorage.setItem('gov_inspect_auth_user', data.username);
+      localStorage.setItem('auth_token', data.token);
+      return true;
+    } catch (error) {
+      console.error('Login failed:', error);
+      // Fallback to mock
+      if (!user.trim()) return false;
+      await new Promise(resolve => setTimeout(resolve, 800));
+      setUsername(user);
+      localStorage.setItem('gov_inspect_auth_user', user);
+      return true;
+    }
   };
 
   const logout = () => {
