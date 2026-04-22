@@ -103,7 +103,7 @@ inspect/
 
 ## API Documentation
 
-Detailed API documentation can be found in the [server/README.md](server/README.md) file.
+Detailed API documentation can be found in the `server/README.md` file in the server directory.
 
 ## Contributing
 
