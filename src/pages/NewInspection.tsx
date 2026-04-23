@@ -14,40 +14,41 @@ declare global {
 
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   const R = 6371e3;
-  const p1 = lat1 * Math.PI/180;
-  const p2 = lat2 * Math.PI/180;
-  const dp = (lat2-lat1) * Math.PI/180;
-  const dl = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(dp/2) * Math.sin(dp/2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl/2) * Math.sin(dl/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const p1 = lat1 * Math.PI / 180;
+  const p2 = lat2 * Math.PI / 180;
+  const dp = (lat2 - lat1) * Math.PI / 180;
+  const dl = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dp / 2) * Math.sin(dp / 2) + Math.cos(p1) * Math.cos(p2) * Math.sin(dl / 2) * Math.sin(dl / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 };
 
 export default function NewInspection() {
   const { username } = useAuth();
   const navigate = useNavigate();
-  
+
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [location, setLocation] = useState<Location | null>(null);
-  
+
   const [isGettingLocation, setIsGettingLocation] = useState(true);
+  const [isResolvingAddress, setIsResolvingAddress] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [isLocationManuallySet, setIsLocationManuallySet] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markerInstanceRef = useRef<any>(null);
-  
-  // Live camera states
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [isMirrored, setIsMirrored] = useState(true);
-  
+
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isGoogleMapsReady, setIsGoogleMapsReady] = useState(false);
@@ -56,25 +57,21 @@ export default function NewInspection() {
     loadGoogleMaps().then(setIsGoogleMapsReady);
   }, []);
 
-  // Unmount cleanup for camera
   useEffect(() => {
     return () => {
       if (cameraStream) stopCamera(cameraStream);
     };
   }, [cameraStream]);
 
-  // Attach camera stream to video element when it mounts
   useEffect(() => {
     if (isCameraOpen && videoRef.current && cameraStream) {
       videoRef.current.srcObject = cameraStream;
     }
   }, [isCameraOpen, cameraStream]);
 
-  // Render Google Map automatically when location is acquired
   useEffect(() => {
     if (location && mapContainerRef.current && isGoogleMapsReady && window.google && window.google.maps) {
       if (!mapInstanceRef.current) {
-        // Initialize Map ONCE
         mapInstanceRef.current = new window.google.maps.Map(mapContainerRef.current, {
           center: { lat: location.lat, lng: location.lng },
           zoom: 16,
@@ -89,12 +86,13 @@ export default function NewInspection() {
         });
 
         const handleManualPosition = async (newLat: number, newLng: number) => {
-          setIsGettingLocation(true);
+          setIsResolvingAddress(true);
           setIsLocationManuallySet(true);
-          setLocation(prev => ({ 
-            lat: newLat, 
-            lng: newLng, 
-            address: prev?.address || "Updating address..." 
+          setLocationError('');
+          setLocation(prev => ({
+            lat: newLat,
+            lng: newLng,
+            address: prev?.address || 'Updating address...'
           }));
 
           let newAddress = `Approx. manually set near ${newLat.toFixed(4)}, ${newLng.toFixed(4)}`;
@@ -105,10 +103,11 @@ export default function NewInspection() {
               newAddress = response.results[0].formatted_address;
             }
           } catch (e) {
-            console.warn("Manual Geocoding Failed");
+            console.warn('Manual geocoding failed', e);
           }
+
           setLocation({ lat: newLat, lng: newLng, address: newAddress });
-          setIsGettingLocation(false);
+          setIsResolvingAddress(false);
         };
 
         window.google.maps.event.addListener(markerInstanceRef.current, 'dragend', () => {
@@ -123,14 +122,25 @@ export default function NewInspection() {
           }
         });
       } else {
-        // Smoothly pan map if location changes from other sources without rebuilding iframe
         mapInstanceRef.current.panTo({ lat: location.lat, lng: location.lng });
         markerInstanceRef.current.setPosition({ lat: location.lat, lng: location.lng });
       }
     }
   }, [isGoogleMapsReady, location]);
 
-  // Automatically fetch location on mount
+  useEffect(() => {
+    if (!mapInstanceRef.current || !window.google || !window.google.maps) return;
+
+    const timeoutId = window.setTimeout(() => {
+      window.google.maps.event.trigger(mapInstanceRef.current, 'resize');
+      if (location) {
+        mapInstanceRef.current.setCenter({ lat: location.lat, lng: location.lng });
+      }
+    }, 100);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [isMapFullscreen, location]);
+
   useEffect(() => {
     handleGetLocation();
   }, []);
@@ -138,12 +148,14 @@ export default function NewInspection() {
   const handleGetLocation = async () => {
     setIsGettingLocation(true);
     setLocationError('');
-    
+
     try {
       const position = await getHighlyAccurateLocation();
       const coords = { lat: position.lat, lng: position.lng };
-      let address = `Approx. Address near ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)} (±${Math.round(position.accuracy)}m)`;
-      
+      let address = `Approx. Address near ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)} (+/-${Math.round(position.accuracy)}m)`;
+      setLocationAccuracy(position.accuracy);
+      setIsLocationManuallySet(false);
+
       try {
         if (window.google && window.google.maps) {
           const geocoder = new window.google.maps.Geocoder();
@@ -153,9 +165,9 @@ export default function NewInspection() {
           }
         }
       } catch (err) {
-        console.warn("Geocoding failed, maybe API key is not set up correctly yet.", err);
+        console.warn('Geocoding failed, maybe API key is not set up correctly yet.', err);
       }
-      
+
       setLocation({ ...coords, address });
     } catch (error: any) {
       setLocationError(`Location access denied or unavailable (${error.message}).`);
@@ -168,25 +180,23 @@ export default function NewInspection() {
     try {
       let stream: MediaStream;
       try {
-        // Try requesting environment (rear) camera first which is ideal for inspections
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { facingMode: { ideal: 'environment' } } 
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }
         });
-      } catch (innerErr) {
-        // Fallback to any available camera if environment camera is not matched (e.g. laptops)
-        stream = await navigator.mediaDevices.getUserMedia({ 
-          video: true 
+      } catch {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true
         });
       }
-      
+
       setCameraStream(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
       setIsCameraOpen(true);
     } catch (err: any) {
-      console.error("Error accessing camera:", err);
-      alert("Could not access the camera. Make sure no other app is using it. Error: " + (err.message || "Unknown error"));
+      console.error('Error accessing camera:', err);
+      alert('Could not access the camera. Make sure no other app is using it. Error: ' + (err.message || 'Unknown error'));
     }
   };
 
@@ -214,13 +224,13 @@ export default function NewInspection() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-        
+
         let photoLocation: Location | null = null;
         if (!isLocationManuallySet) {
           try {
             const position = await getHighlyAccurateLocation();
             photoLocation = { lat: position.lat, lng: position.lng };
-            
+
             if (window.google && window.google.maps) {
               const geocoder = new window.google.maps.Geocoder();
               const response = await geocoder.geocode({ location: photoLocation });
@@ -229,20 +239,17 @@ export default function NewInspection() {
               }
             }
           } catch (e) {
-            console.warn("Failed individual photo GPS. Falling back to global location.", e);
+            console.warn('Failed individual photo GPS. Falling back to global location.', e);
           }
         }
 
-        // Critical fallback: If independent tracking times out or location was manually set, inherit the overall inspection site location
         let finalLocation = isLocationManuallySet ? location : (photoLocation || location);
-        
-        // Anti micro-drift snap: If you took a photo within 15 meters of the inspection starting point, 
-        // lock it to the main address so they visually match identically.
+
         if (!isLocationManuallySet && photoLocation && location) {
-           const dist = getDistance(location.lat, location.lng, photoLocation.lat, photoLocation.lng);
-           if (dist < 15) {
-             finalLocation = location;
-           }
+          const dist = getDistance(location.lat, location.lng, photoLocation.lat, photoLocation.lng);
+          if (dist < 15) {
+            finalLocation = location;
+          }
         }
 
         setPhotos(prev => [...prev, {
@@ -262,9 +269,9 @@ export default function NewInspection() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username) return;
-    
+
     setIsSaving(true);
-    
+
     try {
       const newRecord = {
         id: crypto.randomUUID(),
@@ -274,13 +281,12 @@ export default function NewInspection() {
         location,
         photos
       };
-      
+
       await db.saveInspection(newRecord);
-      // Navigate back to dashboard after successful save
       navigate('/');
     } catch (error) {
-      console.error("Error saving inspection:", error);
-      alert("Failed to save inspection report. Try again.");
+      console.error('Error saving inspection:', error);
+      alert('Failed to save inspection report. Try again.');
       setIsSaving(false);
     }
   };
@@ -301,44 +307,63 @@ export default function NewInspection() {
 
       <div className="card" style={{ padding: '1.5rem' }}>
         <form onSubmit={handleSubmit}>
-          
-          {/* Location Section */}
           <div className="form-group" style={{ backgroundColor: 'var(--color-background)', padding: '1rem', borderRadius: 'var(--border-radius)', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
               <label className="form-label" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <MapPin size={18} color="var(--color-accent)" /> 
+                <MapPin size={18} color="var(--color-accent)" />
                 Site Location
               </label>
               <button type="button" onClick={handleGetLocation} className="btn btn-outline" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
                 Refresh GPS
               </button>
             </div>
-            
-            {isGettingLocation ? (
+
+            {!location && isGettingLocation ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
                 <Loader size={16} className="spinner" /> Acquiring coordinates...
               </div>
-            ) : locationError ? (
+            ) : null}
+
+            {!location && locationError ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-danger)' }}>
                 <AlertTriangle size={16} /> {locationError}
               </div>
-            ) : location ? (
+            ) : null}
+
+            {location ? (
               <div>
                 <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>{location.address}</p>
-                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', color: 'var(--color-text-muted)', fontSize: '0.75rem', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', gap: '1rem', marginTop: '0.5rem', color: 'var(--color-text-muted)', fontSize: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                   <span>Lat: {location.lat.toFixed(6)}</span>
                   <span>Lng: {location.lng.toFixed(6)}</span>
+                  {locationAccuracy !== null && !isLocationManuallySet ? (
+                    <span>Accuracy: +/-{Math.round(locationAccuracy)}m</span>
+                  ) : null}
                 </div>
+
+                {(isGettingLocation || isResolvingAddress) ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                    <Loader size={14} className="spinner" />
+                    {isResolvingAddress ? 'Updating address for the selected pin...' : 'Refreshing GPS...'}
+                  </div>
+                ) : null}
+
+                {locationError ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-danger)', marginBottom: '0.75rem' }}>
+                    <AlertTriangle size={14} /> {locationError}
+                  </div>
+                ) : null}
+
                 <div style={{ position: 'relative' }}>
-                  <div 
-                    ref={mapContainerRef} 
-                    style={{ 
-                      ...(isMapFullscreen 
-                        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, borderRadius: 0 } 
+                  <div
+                    ref={mapContainerRef}
+                    style={{
+                      ...(isMapFullscreen
+                        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, borderRadius: 0 }
                         : { width: '100%', height: '180px', borderRadius: 'var(--border-radius)' }
                       ),
-                      border: '1px solid var(--color-border)', 
-                      overflow: 'hidden' 
+                      border: '1px solid var(--color-border)',
+                      overflow: 'hidden'
                     }}
                   />
                   <button
@@ -369,33 +394,32 @@ export default function NewInspection() {
                 </div>
                 {!isMapFullscreen && (
                   <p style={{ fontSize: '0.7rem', color: 'var(--color-primary-light)', marginTop: '0.5rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                     Not accurate enough? Drag the red pin or click the map to set location manually.
+                    Not accurate enough? Drag the red pin or click the map to set location manually.
                   </p>
                 )}
               </div>
             ) : null}
           </div>
 
-          {/* Photos Section */}
           <div className="form-group" style={{ marginBottom: '1.5rem' }}>
             <label className="form-label">Photographic Evidence</label>
             <p style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginBottom: '0.5rem' }}>
               Capture multiple photos directly using the live camera.
             </p>
-            
+
             {isCameraOpen ? (
-              <div style={{ 
-                ...(isCameraFullscreen 
+              <div style={{
+                ...(isCameraFullscreen
                   ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, borderRadius: 0, background: '#000', display: 'flex', flexDirection: 'column' }
                   : { marginBottom: '1rem', border: '1px solid var(--color-border)', borderRadius: 'var(--border-radius)', overflow: 'hidden' }
                 )
               }}>
                 <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
-                  <video 
-                    ref={videoRef} 
-                    autoPlay 
+                  <video
+                    ref={videoRef}
+                    autoPlay
                     playsInline
-                    muted 
+                    muted
                     style={{ width: '100%', ...(isCameraFullscreen ? { height: '100%' } : { height: '400px', maxHeight: '50vh' }), backgroundColor: '#000', objectFit: 'cover', borderBottom: isCameraFullscreen ? 'none' : '1px solid var(--color-border)', transform: isMirrored ? 'scaleX(-1)' : 'none' }}
                   />
                   <button
@@ -425,7 +449,7 @@ export default function NewInspection() {
                     <FlipHorizontal size={20} />
                   </button>
                   <button type="button" onClick={captureLivePhoto} disabled={isCapturingPhoto} className="btn btn-primary" style={{ flex: 1, padding: '0.5rem' }}>
-                    {isCapturingPhoto ? <Loader size={18} className="spinner" /> : <Camera size={18} />} 
+                    {isCapturingPhoto ? <Loader size={18} className="spinner" /> : <Camera size={18} />}
                     {isCapturingPhoto ? ' Logging GPS...' : ' Capture Snapshot'}
                   </button>
                   <button type="button" onClick={() => stopCamera()} className="btn btn-outline" style={{ padding: '0.5rem' }}>
@@ -449,17 +473,17 @@ export default function NewInspection() {
                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '4px', backgroundColor: 'rgba(0,0,0,0.85)', fontSize: '0.55rem', color: 'var(--color-primary-dark)', display: 'flex', flexDirection: 'column', gap: '2px', backdropFilter: 'blur(4px)' }}>
                       {photo.location.address && (
                         <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                           <MapPin size={8} style={{ display: 'inline', marginRight: '2px', verticalAlign: 'text-bottom' }} />
-                           {photo.location.address}
+                          <MapPin size={8} style={{ display: 'inline', marginRight: '2px', verticalAlign: 'text-bottom' }} />
+                          {photo.location.address}
                         </div>
                       )}
                       <div style={{ fontFamily: 'monospace', color: 'var(--color-primary-light)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                         {photo.location.lat.toFixed(5)}, {photo.location.lng.toFixed(5)}
+                        {photo.location.lat.toFixed(5)}, {photo.location.lng.toFixed(5)}
                       </div>
                     </div>
                   )}
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => removePhoto(index)}
                     style={{ position: 'absolute', top: '4px', right: '4px', background: 'rgba(239,68,68,0.8)', color: 'white', border: 'none', borderRadius: '50%', width: '22px', height: '22px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                   >
@@ -470,7 +494,6 @@ export default function NewInspection() {
             </div>
           </div>
 
-          {/* Description Section */}
           <div className="form-group">
             <label className="form-label" htmlFor="description">Inspection Notes / Details</label>
             <textarea
@@ -492,17 +515,17 @@ export default function NewInspection() {
           )}
 
           <div style={{ display: 'flex', gap: '1rem', marginTop: (!location || photos.length === 0 || !description.trim()) ? '1rem' : '2rem' }}>
-            <button 
-              type="button" 
-              className="btn btn-outline" 
+            <button
+              type="button"
+              className="btn btn-outline"
               onClick={() => navigate(-1)}
               style={{ flex: 1 }}
             >
               Cancel
             </button>
-            <button 
-              type="submit" 
-              className="btn btn-primary" 
+            <button
+              type="submit"
+              className="btn btn-primary"
               disabled={isSaving || !location || photos.length === 0 || !description.trim()}
               style={{ flex: 2, opacity: (!location || photos.length === 0 || !description.trim()) ? 0.5 : 1 }}
             >
@@ -518,7 +541,7 @@ export default function NewInspection() {
           </div>
         </form>
       </div>
-      
+
       <style>{`
         @keyframes spin {
           from { transform: rotate(0deg); }
