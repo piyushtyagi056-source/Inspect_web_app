@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Camera, MapPin, Save, ArrowLeft, FlipHorizontal, Loader, AlertTriangle, X, Maximize, Minimize } from 'lucide-react';
+import { Camera, MapPin, Save, ArrowLeft, FlipHorizontal, Loader, AlertTriangle, X, Maximize, Minimize, Search } from 'lucide-react';
 import { getHighlyAccurateLocation } from '../utils/geo';
 import { loadGoogleMaps } from '../utils/googleMaps';
 import { useAuth } from '../context/AuthContext';
@@ -30,9 +30,11 @@ export default function NewInspection() {
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<CapturedPhoto[]>([]);
   const [location, setLocation] = useState<Location | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const [isGettingLocation, setIsGettingLocation] = useState(true);
   const [isResolvingAddress, setIsResolvingAddress] = useState(false);
+  const [isSearchingLocation, setIsSearchingLocation] = useState(false);
   const [locationError, setLocationError] = useState('');
   const [isLocationManuallySet, setIsLocationManuallySet] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -41,6 +43,8 @@ export default function NewInspection() {
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const markerInstanceRef = useRef<any>(null);
+  const autocompleteInputRef = useRef<HTMLInputElement>(null);
+  const autocompleteRef = useRef<any>(null);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,6 +56,23 @@ export default function NewInspection() {
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
   const [isGoogleMapsReady, setIsGoogleMapsReady] = useState(false);
+
+  const applySelectedLocation = (lat: number, lng: number, address: string, options?: { manual?: boolean; accuracy?: number | null }) => {
+    setLocation({ lat, lng, address });
+    setSearchQuery(address);
+    setLocationError('');
+    setLocationAccuracy(options?.accuracy ?? null);
+    setIsLocationManuallySet(Boolean(options?.manual));
+
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.panTo({ lat, lng });
+      mapInstanceRef.current.setZoom(17);
+    }
+
+    if (markerInstanceRef.current) {
+      markerInstanceRef.current.setPosition({ lat, lng });
+    }
+  };
 
   useEffect(() => {
     loadGoogleMaps().then(setIsGoogleMapsReady);
@@ -70,30 +91,48 @@ export default function NewInspection() {
   }, [isCameraOpen, cameraStream]);
 
   useEffect(() => {
-    if (location && mapContainerRef.current && isGoogleMapsReady && window.google && window.google.maps) {
+    if (!isGoogleMapsReady || !autocompleteInputRef.current || !window.google?.maps?.places || autocompleteRef.current) {
+      return;
+    }
+
+    autocompleteRef.current = new window.google.maps.places.Autocomplete(autocompleteInputRef.current, {
+      fields: ['formatted_address', 'geometry', 'name'],
+    });
+
+    autocompleteRef.current.addListener('place_changed', () => {
+      const place = autocompleteRef.current.getPlace();
+      const lat = place?.geometry?.location?.lat?.();
+      const lng = place?.geometry?.location?.lng?.();
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        setLocationError('Could not read that searched place. Try a more complete address.');
+        return;
+      }
+
+      const address = place.formatted_address || place.name || `Selected place near ${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      applySelectedLocation(lat, lng, address, { manual: true });
+    });
+  }, [isGoogleMapsReady]);
+
+  useEffect(() => {
+    if ((location || isGoogleMapsReady) && mapContainerRef.current && isGoogleMapsReady && window.google?.maps) {
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = new window.google.maps.Map(mapContainerRef.current, {
-          center: { lat: location.lat, lng: location.lng },
-          zoom: 16,
+          center: location ? { lat: location.lat, lng: location.lng } : { lat: 28.6139, lng: 77.209 },
+          zoom: location ? 16 : 5,
           disableDefaultUI: true,
           zoomControl: true,
         });
 
         markerInstanceRef.current = new window.google.maps.Marker({
-          position: { lat: location.lat, lng: location.lng },
+          position: location ? { lat: location.lat, lng: location.lng } : undefined,
           map: mapInstanceRef.current,
           draggable: true
         });
 
         const handleManualPosition = async (newLat: number, newLng: number) => {
           setIsResolvingAddress(true);
-          setIsLocationManuallySet(true);
           setLocationError('');
-          setLocation(prev => ({
-            lat: newLat,
-            lng: newLng,
-            address: prev?.address || 'Updating address...'
-          }));
 
           let newAddress = `Approx. manually set near ${newLat.toFixed(4)}, ${newLng.toFixed(4)}`;
           try {
@@ -106,7 +145,7 @@ export default function NewInspection() {
             console.warn('Manual geocoding failed', e);
           }
 
-          setLocation({ lat: newLat, lng: newLng, address: newAddress });
+          applySelectedLocation(newLat, newLng, newAddress, { manual: true });
           setIsResolvingAddress(false);
         };
 
@@ -121,7 +160,7 @@ export default function NewInspection() {
             handleManualPosition(event.latLng.lat(), event.latLng.lng());
           }
         });
-      } else {
+      } else if (location) {
         mapInstanceRef.current.panTo({ lat: location.lat, lng: location.lng });
         markerInstanceRef.current.setPosition({ lat: location.lat, lng: location.lng });
       }
@@ -129,7 +168,7 @@ export default function NewInspection() {
   }, [isGoogleMapsReady, location]);
 
   useEffect(() => {
-    if (!mapInstanceRef.current || !window.google || !window.google.maps) return;
+    if (!mapInstanceRef.current || !window.google?.maps) return;
 
     const timeoutId = window.setTimeout(() => {
       window.google.maps.event.trigger(mapInstanceRef.current, 'resize');
@@ -153,11 +192,9 @@ export default function NewInspection() {
       const position = await getHighlyAccurateLocation();
       const coords = { lat: position.lat, lng: position.lng };
       let address = `Approx. Address near ${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)} (+/-${Math.round(position.accuracy)}m)`;
-      setLocationAccuracy(position.accuracy);
-      setIsLocationManuallySet(false);
 
       try {
-        if (window.google && window.google.maps) {
+        if (window.google?.maps) {
           const geocoder = new window.google.maps.Geocoder();
           const response = await geocoder.geocode({ location: coords });
           if (response.results && response.results.length > 0) {
@@ -168,11 +205,45 @@ export default function NewInspection() {
         console.warn('Geocoding failed, maybe API key is not set up correctly yet.', err);
       }
 
-      setLocation({ ...coords, address });
+      applySelectedLocation(coords.lat, coords.lng, address, { manual: false, accuracy: position.accuracy });
     } catch (error: any) {
-      setLocationError(`Location access denied or unavailable (${error.message}).`);
+      setLocationError(`Location access denied or unavailable (${error.message}). Search for the site manually below.`);
     } finally {
       setIsGettingLocation(false);
+    }
+  };
+
+  const handleSearchLocation = async () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      setLocationError('Type an address or place name to search.');
+      return;
+    }
+
+    if (!window.google?.maps) {
+      setLocationError('Google Maps is still loading. Try again in a moment.');
+      return;
+    }
+
+    setIsSearchingLocation(true);
+    setLocationError('');
+
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const response = await geocoder.geocode({ address: query });
+      const firstResult = response.results?.[0];
+      const lat = firstResult?.geometry?.location?.lat?.();
+      const lng = firstResult?.geometry?.location?.lng?.();
+
+      if (typeof lat !== 'number' || typeof lng !== 'number') {
+        throw new Error('No matching location found.');
+      }
+
+      applySelectedLocation(lat, lng, firstResult.formatted_address || query, { manual: true });
+    } catch (error: any) {
+      setLocationError(error.message || 'Could not find that location. Try a more complete address.');
+    } finally {
+      setIsSearchingLocation(false);
     }
   };
 
@@ -231,7 +302,7 @@ export default function NewInspection() {
             const position = await getHighlyAccurateLocation();
             photoLocation = { lat: position.lat, lng: position.lng };
 
-            if (window.google && window.google.maps) {
+            if (window.google?.maps) {
               const geocoder = new window.google.maps.Geocoder();
               const response = await geocoder.geocode({ location: photoLocation });
               if (response.results[0]) {
@@ -318,14 +389,48 @@ export default function NewInspection() {
               </button>
             </div>
 
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                <input
+                  ref={autocompleteInputRef}
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleSearchLocation();
+                    }
+                  }}
+                  placeholder="Search a place or full address"
+                  className="form-control"
+                  style={{ paddingLeft: '2.5rem' }}
+                />
+              </div>
+              <button type="button" onClick={handleSearchLocation} className="btn btn-outline" disabled={isSearchingLocation}>
+                {isSearchingLocation ? <Loader size={16} className="spinner" /> : <Search size={16} />}
+                {isSearchingLocation ? 'Searching...' : 'Search'}
+              </button>
+            </div>
+
             {!location && isGettingLocation ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
                 <Loader size={16} className="spinner" /> Acquiring coordinates...
               </div>
             ) : null}
 
-            {!location && locationError ? (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-danger)' }}>
+            {(isGettingLocation || isResolvingAddress) ? (
+              location ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                  <Loader size={14} className="spinner" />
+                  {isResolvingAddress ? 'Updating address for the selected pin...' : 'Refreshing GPS...'}
+                </div>
+              ) : null
+            ) : null}
+
+            {locationError ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--color-danger)', marginBottom: '0.75rem' }}>
                 <AlertTriangle size={16} /> {locationError}
               </div>
             ) : null}
@@ -338,67 +443,60 @@ export default function NewInspection() {
                   <span>Lng: {location.lng.toFixed(6)}</span>
                   {locationAccuracy !== null && !isLocationManuallySet ? (
                     <span>Accuracy: +/-{Math.round(locationAccuracy)}m</span>
-                  ) : null}
-                </div>
-
-                {(isGettingLocation || isResolvingAddress) ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
-                    <Loader size={14} className="spinner" />
-                    {isResolvingAddress ? 'Updating address for the selected pin...' : 'Refreshing GPS...'}
-                  </div>
-                ) : null}
-
-                {locationError ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--color-danger)', marginBottom: '0.75rem' }}>
-                    <AlertTriangle size={14} /> {locationError}
-                  </div>
-                ) : null}
-
-                <div style={{ position: 'relative' }}>
-                  <div
-                    ref={mapContainerRef}
-                    style={{
-                      ...(isMapFullscreen
-                        ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, borderRadius: 0 }
-                        : { width: '100%', height: '180px', borderRadius: 'var(--border-radius)' }
-                      ),
-                      border: '1px solid var(--color-border)',
-                      overflow: 'hidden'
-                    }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setIsMapFullscreen(!isMapFullscreen)}
-                    style={{
-                      position: isMapFullscreen ? 'fixed' : 'absolute',
-                      top: '10px',
-                      right: '10px',
-                      zIndex: 10000,
-                      background: 'var(--color-surface)',
-                      border: '1px solid var(--color-border)',
-                      borderRadius: 'var(--border-radius-sm)',
-                      padding: '0.4rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      cursor: 'pointer',
-                      color: 'var(--color-text)'
-                    }}
-                  >
-                    {isMapFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
-                  </button>
-                  {isMapFullscreen && (
-                    <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 10000, background: 'rgba(0,0,0,0.7)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontSize: '0.85rem', backdropFilter: 'blur(4px)' }}>
-                      Drag the red pin to set location
-                    </div>
+                  ) : (
+                    <span>Source: search / manual pin</span>
                   )}
                 </div>
-                {!isMapFullscreen && (
-                  <p style={{ fontSize: '0.7rem', color: 'var(--color-primary-light)', marginTop: '0.5rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
-                    Not accurate enough? Drag the red pin or click the map to set location manually.
-                  </p>
-                )}
               </div>
-            ) : null}
+            ) : (
+              <p style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginBottom: '0.75rem' }}>
+                If GPS is wrong, search the exact place above and use that result instead.
+              </p>
+            )}
+
+            <div style={{ position: 'relative' }}>
+              <div
+                ref={mapContainerRef}
+                style={{
+                  ...(isMapFullscreen
+                    ? { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 9999, borderRadius: 0 }
+                    : { width: '100%', height: '220px', borderRadius: 'var(--border-radius)' }
+                  ),
+                  border: '1px solid var(--color-border)',
+                  overflow: 'hidden'
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => setIsMapFullscreen(!isMapFullscreen)}
+                style={{
+                  position: isMapFullscreen ? 'fixed' : 'absolute',
+                  top: '10px',
+                  right: '10px',
+                  zIndex: 10000,
+                  background: 'var(--color-surface)',
+                  border: '1px solid var(--color-border)',
+                  borderRadius: 'var(--border-radius-sm)',
+                  padding: '0.4rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                  color: 'var(--color-text)'
+                }}
+              >
+                {isMapFullscreen ? <Minimize size={18} /> : <Maximize size={18} />}
+              </button>
+              {isMapFullscreen && (
+                <div style={{ position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)', zIndex: 10000, background: 'rgba(0,0,0,0.7)', color: 'white', padding: '0.5rem 1rem', borderRadius: '20px', fontSize: '0.85rem', backdropFilter: 'blur(4px)' }}>
+                  Search, drag the red pin, or click the map to set location
+                </div>
+              )}
+            </div>
+            {!isMapFullscreen && (
+              <p style={{ fontSize: '0.7rem', color: 'var(--color-primary-light)', marginTop: '0.5rem', fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                Search the place, drag the red pin, or click the map to set the exact inspection site manually.
+              </p>
+            )}
           </div>
 
           <div className="form-group" style={{ marginBottom: '1.5rem' }}>
@@ -510,7 +608,7 @@ export default function NewInspection() {
           {(!location || photos.length === 0 || !description.trim()) && (
             <div style={{ marginTop: '2rem', padding: '1rem', backgroundColor: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', borderRadius: 'var(--border-radius)', color: 'var(--color-warning)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <AlertTriangle size={18} style={{ flexShrink: 0 }} />
-              <span>You must acquire GPS coordinates, capture at least one photo, and add a description before submitting.</span>
+              <span>You must set a location, capture at least one photo, and add a description before submitting.</span>
             </div>
           )}
 

@@ -27,7 +27,7 @@ export const loadGoogleMaps = async (): Promise<boolean> => {
       script.async = true;
       script.defer = true;
       script.dataset.googleMapsLoader = 'true';
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
       script.onload = () => resolve(Boolean(window.google && window.google.maps));
       script.onerror = () => reject(new Error('Google Maps failed to load.'));
       document.head.appendChild(script);
