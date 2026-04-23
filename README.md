@@ -115,6 +115,29 @@ inspect/
 
 The application is ready for deployment with demo mode enabled. Anyone can login with any username/password combination.
 
+### Render MVP Setup
+
+For the fastest hackathon deployment, use a single Render Web Service so the frontend and backend share one public URL.
+
+1. Create one Render **Web Service** from this repository.
+2. Set the build command to:
+   ```bash
+   npm install && npm --prefix server install && npm run build && npm --prefix server run build
+   ```
+3. Set the start command to:
+   ```bash
+   npm start
+   ```
+4. Add environment variables:
+   ```bash
+   JWT_SECRET=replace_with_a_long_random_secret
+   VITE_API_BASE_URL=/api
+   VITE_GOOGLE_MAPS_API_KEY=your_browser_restricted_google_maps_key
+   ```
+5. Optional but recommended: attach a persistent disk and set `DB_PATH` to a file on that disk, such as `/var/data/inspect.db`.
+
+This setup gives you one MVP link that serves both the UI and the API.
+
 ### Deployment Steps
 
 1. **Build both frontend and backend** as described above

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Camera, MapPin, Save, ArrowLeft, FlipHorizontal, Loader, AlertTriangle, X, Maximize, Minimize } from 'lucide-react';
 import { getHighlyAccurateLocation } from '../utils/geo';
+import { loadGoogleMaps } from '../utils/googleMaps';
 import { useAuth } from '../context/AuthContext';
 import { db, type Location, type CapturedPhoto } from '../services/db';
 
@@ -49,6 +50,11 @@ export default function NewInspection() {
   
   const [isMapFullscreen, setIsMapFullscreen] = useState(false);
   const [isCameraFullscreen, setIsCameraFullscreen] = useState(false);
+  const [isGoogleMapsReady, setIsGoogleMapsReady] = useState(false);
+
+  useEffect(() => {
+    loadGoogleMaps().then(setIsGoogleMapsReady);
+  }, []);
 
   // Unmount cleanup for camera
   useEffect(() => {
@@ -66,7 +72,7 @@ export default function NewInspection() {
 
   // Render Google Map automatically when location is acquired
   useEffect(() => {
-    if (location && mapContainerRef.current && window.google && window.google.maps) {
+    if (location && mapContainerRef.current && isGoogleMapsReady && window.google && window.google.maps) {
       if (!mapInstanceRef.current) {
         // Initialize Map ONCE
         mapInstanceRef.current = new window.google.maps.Map(mapContainerRef.current, {
@@ -122,7 +128,7 @@ export default function NewInspection() {
         markerInstanceRef.current.setPosition({ lat: location.lat, lng: location.lng });
       }
     }
-  }, [location]);
+  }, [isGoogleMapsReady, location]);
 
   // Automatically fetch location on mount
   useEffect(() => {

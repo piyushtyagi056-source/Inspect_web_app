@@ -4,6 +4,7 @@ import { db, type Inspection } from '../services/db';
 import { useAuth } from '../context/AuthContext';
 import { Calendar, MapPin, ArrowLeft, Image as ImageIcon, Navigation } from 'lucide-react';
 import { getHighlyAccurateLocation } from '../utils/geo';
+import { loadGoogleMaps } from '../utils/googleMaps';
 
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
   lat1 = Number(lat1); lon1 = Number(lon1); lat2 = Number(lat2); lon2 = Number(lon2);
@@ -26,6 +27,7 @@ export default function InspectionDetail() {
   
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isGoogleMapsReady, setIsGoogleMapsReady] = useState(false);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   const blueDotRef = useRef<any>(null);
@@ -33,6 +35,10 @@ export default function InspectionDetail() {
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number, accuracy: number} | null>(null);
   const [isWatchingLocation, setIsWatchingLocation] = useState(false);
   const watchIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    loadGoogleMaps().then(setIsGoogleMapsReady);
+  }, []);
 
   const toggleLocationWatch = () => {
     if (isWatchingLocation) {
@@ -86,7 +92,7 @@ export default function InspectionDetail() {
 
   // Render Google Map if available
   useEffect(() => {
-    if (inspection?.location && mapContainerRef.current && window.google && window.google.maps) {
+    if (inspection?.location && mapContainerRef.current && isGoogleMapsReady && window.google && window.google.maps) {
       if (!mapInstanceRef.current) {
         mapInstanceRef.current = new window.google.maps.Map(mapContainerRef.current, {
           center: { lat: inspection.location.lat, lng: inspection.location.lng },
@@ -100,7 +106,7 @@ export default function InspectionDetail() {
         });
       }
     }
-  }, [inspection]);
+  }, [inspection, isGoogleMapsReady]);
 
   // Update Blue Dot tracker
   useEffect(() => {

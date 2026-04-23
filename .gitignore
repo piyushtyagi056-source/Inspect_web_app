@@ -1,4 +1,6 @@
 .env
+server/inspect.db
+server/inspect.db-journal
 # Logs
 logs
 *.log
